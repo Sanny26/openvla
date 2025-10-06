@@ -26,7 +26,8 @@ overwatch = initialize_overwatch(__name__)
 
 # === HF Hub Repository ===
 HF_HUB_REPO = "TRI-ML/prismatic-vlms"
-VLA_HF_HUB_REPO = "openvla/openvla-dev"
+# VLA_HF_HUB_REPO = "openvla/openvla-dev"
+VLA_HF_HUB_REPO = "openvla"
 
 
 # === Available Models ===

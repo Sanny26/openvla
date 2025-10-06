@@ -11,12 +11,16 @@ Usage:
         --pretrained_checkpoint <CHECKPOINT_PATH> \
         --task_suite_name [ libero_spatial | libero_object | libero_goal | libero_10 | libero_90 ] \
         --center_crop [ True | False ] \
+        --do_sample [ True | False ] \
+        --temperature <FLOAT_VALUE> \
+        --action_distribution_file <JSON_FILE_PATH> \
         --run_id_note <OPTIONAL TAG TO INSERT INTO RUN ID FOR LOGGING> \
         --use_wandb [ True | False ] \
         --wandb_project <PROJECT> \
         --wandb_entity <ENTITY>
 """
 
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -86,6 +90,27 @@ class GenerateConfig:
 
     # fmt: on
 
+    action_distribution_file: str = '/data/user/san/openvla/experiments/robot/libero/tmp/action_sampling.json'
+    temperature: float = 1.0
+    do_sample: bool = False
+
+def load_action_distributions(filepath: str) -> dict:
+    """Load action distributions from JSON file if it exists, otherwise return empty dict."""
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            return {}
+    return {}
+
+
+def save_action_distributions(filepath: str, data: dict) -> None:
+    """Save action distributions to JSON file."""
+    os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else '.', exist_ok=True)
+    with open(filepath, 'w') as f:
+        json.dump(data, f, indent=2)
+
 
 @draccus.wrap()
 def eval_libero(cfg: GenerateConfig) -> None:
@@ -97,8 +122,14 @@ def eval_libero(cfg: GenerateConfig) -> None:
     # Set random seed
     set_seed_everywhere(cfg.seed)
 
+    # Load existing action distributions
+    action_distributions = load_action_distributions(cfg.action_distribution_file)
+
     # [OpenVLA] Set action un-normalization key
-    cfg.unnorm_key = cfg.task_suite_name
+    if cfg.task_suite_name == "libero_clutter":
+        cfg.unnorm_key = "libero_spatial"
+    else:
+        cfg.unnorm_key = cfg.task_suite_name
 
     # Load model
     model = get_model(cfg)
@@ -137,15 +168,19 @@ def eval_libero(cfg: GenerateConfig) -> None:
     benchmark_dict = benchmark.get_benchmark_dict()
     task_suite = benchmark_dict[cfg.task_suite_name]()
     num_tasks_in_suite = task_suite.n_tasks
+    # num_tasks_in_suite = 1
     print(f"Task suite: {cfg.task_suite_name}")
     log_file.write(f"Task suite: {cfg.task_suite_name}\n")
 
     # Get expected image dimensions
     resize_size = get_image_resize_size(cfg)
+    # task_suite = benchmark_dict['libero_spatial']()
+    # num_tasks_in_suite = 1
 
     # Start evaluation
     total_episodes, total_successes = 0, 0
-    for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
+    # for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
+    for task_id in tqdm.tqdm(range(1, 2)):
         # Get task
         task = task_suite.get_task(task_id)
 
@@ -156,8 +191,13 @@ def eval_libero(cfg: GenerateConfig) -> None:
         env, task_description = get_libero_env(task, cfg.model_family, resolution=256)
 
         # Start episodes
+        trial_action_distribution = {}
         task_episodes, task_successes = 0, 0
+        
+        # Create a unique key for this run based on parameters
+        run_key = f"temp_{cfg.temperature}_sample_{cfg.do_sample}_task_{task_id}"
         for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
+            episode_actions = []
             print(f"\nTask: {task_description}")
             log_file.write(f"\nTask: {task_description}\n")
 
@@ -180,6 +220,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 max_steps = 520  # longest training demo has 505 steps
             elif cfg.task_suite_name == "libero_90":
                 max_steps = 400  # longest training demo has 373 steps
+            elif cfg.task_suite_name == "libero_clutter":
+                max_steps = 220  # longest training demo has 193 steps
 
             print(f"Starting episode {task_episodes+1}...")
             log_file.write(f"Starting episode {task_episodes+1}...\n")
@@ -208,12 +250,14 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     }
 
                     # Query model to get action
+                    kwargs = {'do_sample': cfg.do_sample, 'temperature': cfg.temperature}
                     action = get_action(
                         cfg,
                         model,
                         observation,
                         task_description,
                         processor=processor,
+                        **kwargs,
                     )
 
                     # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
@@ -223,6 +267,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
                     if cfg.model_family == "openvla":
                         action = invert_gripper_action(action)
+
+                    episode_actions.append(action.tolist()) 
 
                     # Execute action in environment
                     obs, reward, done, info = env.step(action.tolist())
@@ -237,6 +283,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     log_file.write(f"Caught exception: {e}\n")
                     break
 
+            trial_action_distribution[episode_idx] = episode_actions
             task_episodes += 1
             total_episodes += 1
 
@@ -253,6 +300,21 @@ def eval_libero(cfg: GenerateConfig) -> None:
             log_file.write(f"# episodes completed so far: {total_episodes}\n")
             log_file.write(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)\n")
             log_file.flush()
+
+        # Store action distribution with metadata
+        action_distributions[run_key] = {
+            "temperature": cfg.temperature,
+            "do_sample": cfg.do_sample,
+            "task_id": task_id,
+            "task_description": task_description,
+            "num_episodes": task_episodes,
+            "success_rate": float(task_successes) / float(task_episodes) if task_episodes > 0 else 0.0,
+            "action_distributions": trial_action_distribution
+        }
+        
+        # Save updated action distributions to JSON
+        save_action_distributions(cfg.action_distribution_file, action_distributions)
+        print(f"Action distributions saved to {cfg.action_distribution_file}")
 
         # Log final results
         print(f"Current task success rate: {float(task_successes) / float(task_episodes)}")

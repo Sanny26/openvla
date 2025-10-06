@@ -1,0 +1,102 @@
+(define (problem LIBERO_Kitchen_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language Your Language 2)
+    (:regions
+      (wooden_cabinet_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.01 -0.31 0.01 -0.29)
+            )
+          )
+          (:yaw_rotation (
+              (3.141592653589793 3.141592653589793)
+            )
+          )
+      )
+      (akita_black_bowl_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.1 -0.1 0.1 0.1)
+            )
+          )
+          (:yaw_rotation (
+              (0.0 0.0)
+            )
+          )
+      )
+      (plate_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.025 0.225 0.025 0.275)
+            )
+          )
+          (:yaw_rotation (
+              (0.0 0.0)
+            )
+          )
+      )
+      (moka_pot_init_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.1 0.16 0.1 0.36)
+            )
+          )
+          (:yaw_rotation (
+              (0.0 0.0)
+            )
+          )
+      )
+      (top_side
+          (:target wooden_cabinet_1)
+      )
+      (top_region
+          (:target wooden_cabinet_1)
+      )
+      (middle_region
+          (:target wooden_cabinet_1)
+      )
+      (bottom_region
+          (:target wooden_cabinet_1)
+      )
+    )
+
+  (:fixtures
+    kitchen_table - kitchen_table
+    wooden_cabinet_1 - wooden_cabinet
+  )
+
+  (:objects
+    akita_black_bowl_1 - akita_black_bowl
+    plate_1 plate_2 - plate
+    moka_pot_1 - moka_pot
+    milk_1 milk_2 - milk
+    ketchup_1 - ketchup
+    macaroni_and_cheese_1 - macaroni_and_cheese
+    popcorn_1 - popcorn
+    alphabet_soup_1 - alphabet_soup
+    salad_dressing_1 - salad_dressing
+    cream_cheese_1 - cream_cheese
+  )
+
+  (:obj_of_interest
+    wooden_cabinet_1
+    akita_black_bowl_1
+  )
+
+  (:init
+    (On plate_1 kitchen_table_plate_init_region)
+    (On plate_2 kitchen_table_akita_black_bowl_init_region)
+    (On akita_black_bowl_1 kitchen_table_akita_black_bowl_init_region)
+    (On wooden_cabinet_1 kitchen_table_wooden_cabinet_init_region)
+    (On moka_pot_1 kitchen_table_moka_pot_init_region)
+    (On milk_1 kitchen_table_moka_pot_init_region)
+    (On ketchup_1 kitchen_table_moka_pot_init_region)
+    (On macaroni_and_cheese_1 kitchen_table_akita_black_bowl_init_region)
+    (On milk_2 kitchen_table_akita_black_bowl_init_region)
+  )
+
+  (:goal
+    (And (Open wooden_cabinet_1_top_region) (In akita_black_bowl_1 wooden_cabinet_1_bottom_region))
+  )
+
+)
